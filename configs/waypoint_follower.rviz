@@ -5,8 +5,10 @@ Panels:
     Property Tree Widget:
       Expanded:
         - /Global Options1
-        - /PointCloud21
+        - /TF1
+        - /TF1/Frames1
         - /PointCloud21/Topic1
+        - /Marker1
       Splitter Ratio: 0.5
     Tree Height: 369
   - Class: rviz_common/Selection
@@ -93,11 +95,11 @@ Visualization Manager:
         iphone_mount_link:
           Value: false
         odom:
-          Value: false
+          Value: true
         odom_iphone:
-          Value: true
+          Value: false
         sensors_link:
-          Value: true
+          Value: false
       Marker Scale: 1
       Name: TF
       Show Arrows: true
@@ -135,7 +137,7 @@ Visualization Manager:
       Color: 255; 255; 255
       Color Transformer: RGB8
       Decay Time: 0
-      Enabled: true
+      Enabled: false
       Invert Rainbow: false
       Max Color: 255; 255; 255
       Max Intensity: 4096
@@ -155,7 +157,7 @@ Visualization Manager:
         Value: /pointcloud
       Use Fixed Frame: true
       Use rainbow: true
-      Value: true
+      Value: false
     - Alpha: 1
       Class: rviz_default_plugins/RobotModel
       Collision Enabled: false
@@ -248,6 +250,18 @@ Visualization Manager:
         Reliability Policy: Reliable
         Value: /path
       Value: true
+    - Class: rviz_default_plugins/Marker
+      Enabled: true
+      Name: Marker
+      Namespaces:
+        "": true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /next_waypoint
+      Value: true
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
@@ -291,7 +305,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 5.493842124938965
+      Distance: 4.4196367263793945
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -306,10 +320,10 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.46520379185676575
+      Pitch: 0.7002035975456238
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 2.5549285411834717
+      Yaw: 1.439928650856018
     Saved: ~
 Window Geometry:
   Displays:

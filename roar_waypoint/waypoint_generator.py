@@ -30,7 +30,10 @@ class WaypointGeneratorNode(Node):
         self.declare_parameter("rate", 0.2)
         self.declare_parameter("dir", "./data/waypoints/")
         self.declare_parameter("file_name", "")
-
+        self.declare_parameter("path_topic", "/path")
+        self.path_topic = (
+            self.get_parameter("path_topic").get_parameter_value().string_value
+        )
         self.directory: Path = Path(
             self.get_parameter("dir").get_parameter_value().string_value
         )
@@ -48,7 +51,7 @@ class WaypointGeneratorNode(Node):
         self.file = self.file_path.open("+w")
         self.path_publisher = self.create_publisher(
             msg_type=NavPath,
-            topic="path",
+            topic=self.path_topic,
             qos_profile=1,
         )
 
@@ -96,7 +99,6 @@ class WaypointGeneratorNode(Node):
         self.write_transform_stamped_to_file(trans)
 
     def write_transform_stamped_to_file(self, t: TransformStamped):
-
         content = f"{t.transform.translation.x},{t.transform.translation.y},{t.transform.translation.z},{t.transform.rotation.x},{t.transform.rotation.y},{t.transform.rotation.z},{t.transform.rotation.w} \n"
         self.file.write(content)
 

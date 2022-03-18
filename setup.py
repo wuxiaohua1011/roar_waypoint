@@ -26,7 +26,9 @@ setup(
     tests_require=["pytest"],
     entry_points={
         "console_scripts": [
-            "waypoint_generator = roar_waypoint.waypoint_generator:main"
+            "waypoint_generator = roar_waypoint.waypoint_generator:main",
+            "local_planner_node = roar_waypoint.local_planner_node:main",
+            "pid_controller_node = roar_waypoint.pid_controller_node:main",
         ],
     },
 )

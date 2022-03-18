@@ -1,0 +1,26 @@
+{
+    "longitudinal_controller": {
+        "downhill_throttle": -0.01,
+        "uphill_throttle": 0.2,
+        "flat_ground_throttle": 0.2,
+        "up_ramp_grade": 10,
+        "down_ramp_grade": -10
+    },
+    "latitudinal_controller": {
+        "3": {
+            "Kp": 0.006,
+            "Kd": 0.075,
+            "Ki": 0.00025
+        },
+        "4": {
+            "Kp": 0.005,
+            "Kd": 0.075,
+            "Ki": 0.00025
+        },
+        "6": {
+            "Kp": 0.002,
+            "Kd": 0,
+            "Ki": 0
+        }
+    }
+}

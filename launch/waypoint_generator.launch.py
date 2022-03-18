@@ -17,11 +17,26 @@ def generate_launch_description():
     rviz_path = base_path + "/configs/waypoint_generator.rviz"
     return LaunchDescription(
         [
+            launch.actions.DeclareLaunchArgument(
+                name="path_topic", default_value="/path"
+            ),
+            launch.actions.DeclareLaunchArgument(
+                name="max_reverse_throttle", default_value="-0.2"
+            ),
+            launch.actions.DeclareLaunchArgument(
+                name="max_forward_throttle", default_value="0.2"
+            ),
+            launch.actions.DeclareLaunchArgument(
+                name="max_steering", default_value="1.0"
+            ),
+            launch.actions.DeclareLaunchArgument(
+                name="steering_offset", default_value="-0.2"
+            ),
             launch.actions.DeclareLaunchArgument(name="ios_ip_address"),
             launch.actions.DeclareLaunchArgument(
                 name="target_frame", default_value="base_link"
             ),
-            launch.actions.DeclareLaunchArgument(name="rate", default_value="0.2"),
+            launch.actions.DeclareLaunchArgument(name="rate", default_value="0.1"),
             launch.actions.DeclareLaunchArgument(
                 name="dir", default_value="./data/waypoints/"
             ),
@@ -29,13 +44,25 @@ def generate_launch_description():
                 launch.launch_description_sources.PythonLaunchDescriptionSource(
                     os.path.join(
                         get_package_share_directory("ros_roar_streamer"),
-                        "roar_sensor_stream_only_without_rviz.launch.py",
+                        "roar_manual_control.launch.py",
                     )
                 ),
                 launch_arguments={
                     "ios_ip_address": launch.substitutions.LaunchConfiguration(
                         "ios_ip_address"
-                    )
+                    ),
+                    "max_reverse_throttle": launch.substitutions.LaunchConfiguration(
+                        "max_reverse_throttle"
+                    ),
+                    "max_forward_throttle": launch.substitutions.LaunchConfiguration(
+                        "max_forward_throttle"
+                    ),
+                    "max_steering": launch.substitutions.LaunchConfiguration(
+                        "max_steering"
+                    ),
+                    "steering_offset": launch.substitutions.LaunchConfiguration(
+                        "steering_offset"
+                    ),
                 }.items(),
             ),
             Node(
