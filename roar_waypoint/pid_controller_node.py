@@ -1,8 +1,5 @@
 #!/usr/bin/env python3
 
-from black import err
-from pydantic import FilePath
-from sympy import im
 import rclpy
 from rclpy.node import Node
 
@@ -177,12 +174,11 @@ class PIDControllerNode(Node):
             [
                 waypoint_pose.position.x - v_begin[0],
                 0,
-                waypoint_pose.position.y - v_begin[2],
+                -(waypoint_pose.position.y - v_begin[2]), # this is probably wrong lol
             ]
         )
         v_vec_normed = v_vec / np.linalg.norm(v_vec)
         w_vec_normed = w_vec / np.linalg.norm(w_vec)
-
         error = np.arccos(v_vec_normed @ w_vec_normed.T)
         _cross = np.cross(v_vec_normed, w_vec_normed)
         if _cross[1] > 0:
@@ -197,6 +193,8 @@ class PIDControllerNode(Node):
             _ie = 0.0
         k_p, k_d, k_i = self.find_k_values(config=self.lat_config, odom=odom_msg)
         lat_control = float(np.clip((k_p * error) + (k_d * _de) + (k_i * _ie), -1, 1))
+        print(f"v_vec_normed: {v_vec_normed} | w_vec_normed: {w_vec_normed} | error = {error} | lat_control = {lat_control}")
+
         return lat_control
 
     def compute_throttle(self, waypoint_pose: Pose, odom_msg: Odometry):
