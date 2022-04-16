@@ -22,7 +22,7 @@ from tf2_ros.transform_listener import TransformListener
 from geometry_msgs.msg import TransformStamped
 from geometry_msgs.msg import Quaternion
 from nav_msgs.msg import Path as NavPath
-from geometry_msgs.msg import PoseStamped
+from geometry_msgs.msg import PoseStamped, Pose
 from typing import List
 from geometry_msgs.msg import Point
 from pathlib import Path
@@ -30,6 +30,7 @@ from datetime import datetime
 from visualization_msgs.msg import Marker
 from std_msgs.msg import ColorRGBA
 from geometry_msgs.msg import Vector3
+from nav_msgs.msg import Odometry
 
 
 class LocalPlannerNode(Node):
@@ -41,9 +42,25 @@ class LocalPlannerNode(Node):
         self.declare_parameter("target_frame", "base_link")
         self.declare_parameter("path_topic", "/path")
         self.declare_parameter("next_waypoint_topic", "/next_waypoint")
+        self.declare_parameter("source_frame", "odom")
+        self.declare_parameter("marker_size", 1.0)
+        self.declare_parameter("closeness_threshold", 1.0)
+        self.declare_parameter("odom_topic", "/carla/ego_vehicle/odometry")
 
+        self.odom_topic = (
+            self.get_parameter("odom_topic").get_parameter_value().string_value
+        )
+        self.closeness_threshold = (
+            self.get_parameter("closeness_threshold").get_parameter_value().double_value
+        )
+        self.marker_size = (
+            self.get_parameter("marker_size").get_parameter_value().double_value
+        )
         self.target_frame = (
             self.get_parameter("target_frame").get_parameter_value().string_value
+        )
+        self.source_frame = (
+            self.get_parameter("source_frame").get_parameter_value().string_value
         )
         self.waypoint_file_path: Path = Path(
             self.get_parameter("waypoint_file_path").get_parameter_value().string_value
@@ -75,32 +92,38 @@ class LocalPlannerNode(Node):
 
         self.get_logger().info(f"[{len(self.path.poses)}] points were read")
         # timer
-        self.create_timer(0.1, self.timer_callback)
+        self.subscription = self.create_subscription(
+            Odometry,
+            self.odom_topic,
+            self.timer_callback,
+            10,
+        )
+        self.subscription
         self.create_timer(2, self.global_path_callback)
 
         # State variables
         self.is_init_position_in_path_determined = False
         self.closest_waypoint_index = 0
-        self.closeness_threshold = 0.5
 
     def global_path_callback(self):
         self.path_publisher.publish(self.path)  # publish path globally
 
-    def timer_callback(self):
-        self.find_next_waypoint()
+    def timer_callback(self, odom_msg: Odometry):
+        self.find_next_waypoint(odom_msg)
 
-    def find_next_waypoint(self):
+    def find_next_waypoint(self, odom_msg: Odometry):
         # first get the vehicle's current transform
-        from_frame_rel = self.target_frame
-        to_frame_rel = "odom"
+        target_frame = self.target_frame
+        source_frame = self.source_frame
+
         try:
             now = rclpy.time.Time()
             trans: TransformStamped = self.tf_buffer.lookup_transform(
-                "odom", from_frame_rel, now
+                source_frame, target_frame, now
             )
         except TransformException as ex:
             self.get_logger().info(
-                f"Could not transform {to_frame_rel} to {from_frame_rel}: {ex}"
+                f"Could not transform {source_frame} to {target_frame}: {ex}"
             )
             return
 
@@ -117,16 +140,15 @@ class LocalPlannerNode(Node):
             radius=self.closeness_threshold,
         )
 
-        # publish this point so that controller can use it
         m = Marker(
             pose=self.path.poses[self.closest_waypoint_index].pose,
             color=ColorRGBA(r=1.0, g=0.0, b=0.0, a=1.0),
             lifetime=Duration(sec=1),
-            scale=Vector3(x=0.1, y=0.1, z=0.1),
+            scale=Vector3(x=self.marker_size, y=self.marker_size, z=self.marker_size),
             type=2,
         )
-        m.header.frame_id = "odom"
-        m.header.stamp = self.get_clock().now().to_msg()
+        m.header.frame_id = self.source_frame
+        m.header.stamp = odom_msg.header.stamp
         self.waypoint_marker_publisher.publish(m)
 
     @staticmethod
@@ -152,7 +174,11 @@ class LocalPlannerNode(Node):
                     path.poses[curr_index].pose.position.y,
                 ]
             )
-            curr_dist = np.linalg.norm(vehicle_loc - waypoint_loc)
+            curr_dist = np.sqrt(
+                (vehicle_loc[0] - waypoint_loc[0]) ** 2
+                + (vehicle_loc[1] - waypoint_loc[1]) ** 2
+            )
+            # curr_dist = np.linalg.norm(vehicle_loc - waypoint_loc)
             if curr_dist > radius:
                 break
             else:
@@ -179,30 +205,23 @@ class LocalPlannerNode(Node):
                 closest_index = i
         return closest_index
 
-    @staticmethod
-    def read_waypoint_file(file_path: Path) -> NavPath:
+    def read_waypoint_file(self, file_path: Path) -> NavPath:
         assert file_path.exists(), f"{file_path} does not exist"
         file = file_path.open("r")
         path = NavPath()
-        path.header.frame_id = "odom"
+        path.header.frame_id = self.source_frame
         for line in file.readlines():
             data = line.split(",")
             data = [float(d) for d in data]
             current_pose = PoseStamped()
-            current_pose.header.frame_id = "base_link"
+            current_pose.header.frame_id = self.source_frame
             current_pose.pose.position = Point(
                 x=data[0],
                 y=data[1],
                 z=data[2],
             )
-            current_pose.pose.orientation = Quaternion(
-                x=data[3], y=data[4], z=data[5], w=data[6]
-            )
             path.poses.append(current_pose)
         return path
-
-    def on_timer(self):
-        pass
 
     def destroy_node(self):
         super().destroy_node()

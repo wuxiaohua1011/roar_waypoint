@@ -27,6 +27,7 @@ class WaypointGeneratorNode(Node):
     def __init__(self):
         super().__init__("waypoint_generator_node")
         self.declare_parameter("target_frame", "base_link")
+        self.declare_parameter("source_frame", "odom")
         self.declare_parameter("rate", 0.2)
         self.declare_parameter("dir", "./data/waypoints/")
         self.declare_parameter("file_name", "")
@@ -58,6 +59,9 @@ class WaypointGeneratorNode(Node):
         self.target_frame = (
             self.get_parameter("target_frame").get_parameter_value().string_value
         )
+        self.source_frame = (
+            self.get_parameter("source_frame").get_parameter_value().string_value
+        )
         self.rate = self.get_parameter("rate").get_parameter_value().double_value
         assert self.rate > 0, "Rate has to be a Float greater than 0"
         self.tf_buffer = Buffer()
@@ -68,21 +72,21 @@ class WaypointGeneratorNode(Node):
         self.path: NavPath = NavPath()
 
     def on_timer(self):
-        from_frame_rel = self.target_frame
-        to_frame_rel = "odom"
+        target_frame = self.target_frame
+        source_frame = self.source_frame
 
         try:
             now = rclpy.time.Time()
             trans: TransformStamped = self.tf_buffer.lookup_transform(
-                to_frame_rel, from_frame_rel, now
+                source_frame, target_frame, now
             )
         except TransformException as ex:
             self.get_logger().info(
-                f"Could not transform {to_frame_rel} to {from_frame_rel}: {ex}"
+                f"Could not transform {source_frame} to {target_frame}: {ex}"
             )
             return
         current_pose = PoseStamped()
-        current_pose.header.frame_id = "base_link"
+        current_pose.header.frame_id = self.target_frame
         current_pose.pose.position = Point(
             x=trans.transform.translation.x,
             y=trans.transform.translation.y,
@@ -92,10 +96,9 @@ class WaypointGeneratorNode(Node):
         self.path.poses.append(current_pose)
         new_path = NavPath()
         new_path.poses = self.path.poses
-        new_path.header.frame_id = "odom"
+        new_path.header.frame_id = self.source_frame
         self.path = new_path
         self.path_publisher.publish(self.path)
-
         self.write_transform_stamped_to_file(trans)
 
     def write_transform_stamped_to_file(self, t: TransformStamped):

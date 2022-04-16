@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 
+from anyio import current_default_worker_thread_limiter
 import rclpy
 from rclpy.node import Node
 
 from carla_msgs.msg import CarlaEgoVehicleControl
+from std_msgs.msg import Float32
 from sensor_msgs.msg import PointCloud2
 import socket
 import numpy as np
@@ -28,50 +30,30 @@ from nav_msgs.msg import Odometry
 import tf_transformations
 from collections import deque
 import json
+import math
 
 
 class PIDControllerNode(Node):
     def __init__(self):
         super().__init__("pid_controller_node")
         # parameter verification
-        self.declare_parameter("target_frame", "base_link")
+        self.declare_parameter("target_frame", "ego_vehicle")
         self.declare_parameter("pid_config_path", "")
-        self.declare_parameter("max_reverse_throttle", -1.0)
-        self.declare_parameter("max_forward_throttle", 1.0)
-        self.declare_parameter("max_steering", 1.0)
-        self.declare_parameter("steering_offset", 0.0)
-        self.declare_parameter("source_frame", "odom")
+        self.declare_parameter("source_frame", "map")
+        self.declare_parameter("odom_topic", "/carla/ego_vehicle/odometry")
+        self.declare_parameter("speed_topic", "/carla/ego_vehicle/speedometer")
+        self.declare_parameter("next_waypoint_topic", "/next_waypoint")
+        self.declare_parameter("target_speed", 25.0)
 
+        self.target_speed = (
+            self.get_parameter("target_speed").get_parameter_value().double_value
+        )
         self.target_frame = (
             self.get_parameter("target_frame").get_parameter_value().string_value
         )
         self.source_frame = (
             self.get_parameter("source_frame").get_parameter_value().string_value
         )
-        self.max_reverse_throttle = (
-            self.get_parameter("max_reverse_throttle")
-            .get_parameter_value()
-            .double_value
-        )
-        self.max_forward_throttle = (
-            self.get_parameter("max_forward_throttle")
-            .get_parameter_value()
-            .double_value
-        )
-        self.max_steering = (
-            self.get_parameter("max_steering").get_parameter_value().double_value
-        )
-        self.steering_offset = (
-            self.get_parameter("steering_offset").get_parameter_value().double_value
-        )
-        self.get_logger().info(
-            f"NOTE: max_forward_throttle = {self.max_forward_throttle}"
-        )
-        self.get_logger().info(
-            f"NOTE: max_reverse_throttle = {self.max_reverse_throttle}"
-        )
-        self.get_logger().info(f"NOTE: max_steering = {self.max_steering}")
-        self.get_logger().info(f"NOTE: steering_offset = {self.steering_offset}")
 
         self.pid_config_path: Path = Path(
             self.get_parameter("pid_config_path").get_parameter_value().string_value
@@ -80,26 +62,44 @@ class PIDControllerNode(Node):
         self.config = json.load(self.pid_config_path.open("r"))
         self.lat_config = self.config["latitudinal_controller"]
         self.long_config: dict = self.config["longitudinal_controller"]
+
         # subscribe
-        self.odom_msg = message_filters.Subscriber(self, Odometry, "/iPhone_odom")
-        self.waypoint_msg = message_filters.Subscriber(self, Marker, "/next_waypoint")
         self.ats = message_filters.ApproximateTimeSynchronizer(
             [
-                self.odom_msg,
-                self.waypoint_msg,
+                message_filters.Subscriber(
+                    self,
+                    Odometry,
+                    self.get_parameter("odom_topic").get_parameter_value().string_value,
+                ),
+                message_filters.Subscriber(
+                    self,
+                    Marker,
+                    self.get_parameter("next_waypoint_topic")
+                    .get_parameter_value()
+                    .string_value,
+                ),
             ],
             queue_size=10,
             slop=0.5,
+            allow_headerless=True,
         )
         self.ats.registerCallback(self.on_msgs_received)
 
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
+
+        print(
+            f"Subscribing to odom topic: [{self.get_parameter('odom_topic').get_parameter_value().string_value}]"
+        )
+        print(
+            f"Subscribing to next waypoint topic: [{self.get_parameter('next_waypoint_topic').get_parameter_value().string_value}]"
+        )
+
         # publisher
         self.carla_msg_publisher = self.create_publisher(
             msg_type=CarlaEgoVehicleControl,
-            topic="/carla/ego_vehicle/vehicle_control_cmd_manual",
-            qos_profile=1,
+            topic="/carla/ego_vehicle/vehicle_control_cmd",
+            qos_profile=10,
         )
 
         # state variables
@@ -112,16 +112,9 @@ class PIDControllerNode(Node):
             maxlen=self.long_error_deque_length
         )  # how much error you want to accumulate
 
-        self.downhill_throttle = self.long_config.get("downhill_throttle", -0.01)
-        self.uphill_throttle = self.long_config.get("uphill_throttle", 0.3)
-        self.flat_ground_throttle = self.long_config.get("flat_ground_throttle", 0.2)
-        self.up_ramp_grade = self.long_config.get("up_ramp_grade", 10)
-        self.down_ramp_grade = self.long_config.get("down_ramp_grade", -10)
-
     def on_msgs_received(self, odom_msg: Odometry, waypoint_msg: Marker):
         target_frame = self.target_frame
         source_frame = self.source_frame
-
         try:
             now = rclpy.time.Time()
             trans: TransformStamped = self.tf_buffer.lookup_transform(
@@ -138,30 +131,20 @@ class PIDControllerNode(Node):
             odom_msg=odom_msg,
             transform=trans.transform,
         )
-        throttle = self.compute_throttle(
-            waypoint_pose=waypoint_msg.pose, odom_msg=odom_msg
-        )
+        throttle = self.compute_throttle(odom_msg)
 
         control = CarlaEgoVehicleControl(
-            throttle=np.clip(
-                throttle, self.max_reverse_throttle, self.max_forward_throttle
-            ),
-            steer=np.clip(steering, -self.max_steering, self.max_steering),
+            throttle=float(np.clip(throttle, -1, 1)),
+            steer=float(np.clip(steering, -1, 1)),
         )
+        control.header.frame_id = self.target_frame
+        control.header.stamp = odom_msg.header.stamp
+
         self.carla_msg_publisher.publish(control)
 
     def compute_steering(
         self, waypoint_pose: Pose, odom_msg: Odometry, transform: Transform
     ):
-
-        v_begin = np.array(
-            [
-                transform.translation.x,
-                0,
-                transform.translation.y,
-            ]
-        )
-
         quat = [
             odom_msg.pose.pose.orientation.x,
             odom_msg.pose.pose.orientation.y,
@@ -169,26 +152,14 @@ class PIDControllerNode(Node):
             odom_msg.pose.pose.orientation.w,
         ]
         r, p, y = tf_transformations.euler_from_quaternion(quat)
-        direction_vector = np.array([np.cos(y), 0, np.sin(y)])
-
-        v_end = v_begin + direction_vector
-
-        v_vec = np.array([v_end[0] - v_begin[0], 0, v_end[2] - v_begin[2]])
-        w_vec = np.array(
-            [
-                waypoint_pose.position.x - v_begin[0],
-                0,
-                -(waypoint_pose.position.y - v_begin[2]),  # this is probably wrong lol
-            ]
+        # VERY HACKY HERE
+        current_heading = y
+        desired_heading = math.atan2(
+            waypoint_pose.position.y - transform.translation.y,
+            waypoint_pose.position.x - transform.translation.x,
         )
-        v_vec_normed = v_vec / np.linalg.norm(v_vec)
-        w_vec_normed = w_vec / np.linalg.norm(w_vec)
-        error = np.arccos(v_vec_normed @ w_vec_normed.T)
-        _cross = np.cross(v_vec_normed, w_vec_normed)
-        if _cross[1] > 0:
-            error *= -1
+        error = -1 * (desired_heading - current_heading)
         self.lat_error_queue.append(error)
-
         if len(self.lat_error_queue) >= 2:
             _de = self.lat_error_queue[-1] - self.lat_error_queue[-2]
             _ie = sum(self.lat_error_queue)
@@ -196,30 +167,22 @@ class PIDControllerNode(Node):
             _de = 0.0
             _ie = 0.0
         k_p, k_d, k_i = self.find_k_values(config=self.lat_config, odom=odom_msg)
-        lat_control = float(np.clip((k_p * error) + (k_d * _de) + (k_i * _ie), -1, 1))
-        print(
-            f"v_vec_normed: {v_vec_normed} | w_vec_normed: {w_vec_normed} | error = {error} | lat_control = {lat_control}"
-        )
+        control = float(np.clip((k_p * error) + (k_d * _de) + (k_i * _ie), -1, 1))
+        return control
 
-        return lat_control
-
-    def compute_throttle(self, waypoint_pose: Pose, odom_msg: Odometry):
-        quat = [
-            odom_msg.pose.pose.orientation.x,
-            odom_msg.pose.pose.orientation.y,
-            odom_msg.pose.pose.orientation.z,
-            odom_msg.pose.pose.orientation.w,
-        ]
-        r, p, y = tf_transformations.euler_from_quaternion(quat)
-        neutral = -90
-        incline = np.degrees(r) - neutral
-        if incline < self.down_ramp_grade:
-            # down hill
-            return self.downhill_throttle
-        elif incline > self.up_ramp_grade:
-            return self.uphill_throttle
+    def compute_throttle(self, odom_msg: Odometry):
+        spd = self.get_speed(odom_msg)
+        error = self.target_speed - spd
+        self.long_error_queue.append(error)
+        if len(self.long_error_queue) >= 2:
+            _de = self.long_error_queue[-1] - self.long_error_queue[-2]
+            _ie = sum(self.long_error_queue)
         else:
-            return self.flat_ground_throttle
+            _de = 0.0
+            _ie = 0.0
+        k_p, k_d, k_i = self.find_k_values(config=self.long_config, odom=odom_msg)
+        control = float(np.clip((k_p * error) + (k_d * _de) + (k_i * _ie), -1, 1))
+        return control
 
     def destroy_node(self):
         super().destroy_node()

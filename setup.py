@@ -29,6 +29,7 @@ setup(
             "waypoint_generator = roar_waypoint.waypoint_generator:main",
             "local_planner_node = roar_waypoint.local_planner_node:main",
             "pid_controller_node = roar_waypoint.pid_controller_node:main",
+            "carla_pid_controller_node = roar_waypoint.carla_pid_controller_node:main",
         ],
     },
 )
