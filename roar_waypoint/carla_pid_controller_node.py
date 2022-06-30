@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 from anyio import current_default_worker_thread_limiter
+from black import diff
 import rclpy
 from rclpy.node import Node
 
@@ -31,6 +32,7 @@ import tf_transformations
 from collections import deque
 import json
 import math
+from .local_planner_node import LocalPlannerNode
 
 
 class PIDControllerNode(Node):
@@ -88,10 +90,10 @@ class PIDControllerNode(Node):
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
 
-        print(
+        self.get_logger().info(
             f"Subscribing to odom topic: [{self.get_parameter('odom_topic').get_parameter_value().string_value}]"
         )
-        print(
+        self.get_logger().info(
             f"Subscribing to next waypoint topic: [{self.get_parameter('next_waypoint_topic').get_parameter_value().string_value}]"
         )
 
@@ -113,6 +115,7 @@ class PIDControllerNode(Node):
         )  # how much error you want to accumulate
 
     def on_msgs_received(self, odom_msg: Odometry, waypoint_msg: Marker):
+
         target_frame = self.target_frame
         source_frame = self.source_frame
         try:
@@ -125,6 +128,14 @@ class PIDControllerNode(Node):
                 f"Could not transform {source_frame} to {target_frame}: {ex}"
             )
             return
+
+        vehicle_loc = Pose(
+            position=Point(
+                x=trans.transform.translation.x,
+                y=trans.transform.translation.y,
+                z=trans.transform.translation.z,
+            )
+        )
 
         steering = self.compute_steering(
             waypoint_pose=waypoint_msg.pose,
@@ -146,19 +157,45 @@ class PIDControllerNode(Node):
         self, waypoint_pose: Pose, odom_msg: Odometry, transform: Transform
     ):
         quat = [
-            odom_msg.pose.pose.orientation.x,
-            odom_msg.pose.pose.orientation.y,
-            odom_msg.pose.pose.orientation.z,
-            odom_msg.pose.pose.orientation.w,
+            transform.rotation.x,
+            transform.rotation.y,
+            transform.rotation.z,
+            transform.rotation.w,
+            # odom_msg.pose.pose.orientation.x,
+            # odom_msg.pose.pose.orientation.y,
+            # odom_msg.pose.pose.orientation.z,
+            # odom_msg.pose.pose.orientation.w,
         ]
-        r, p, y = tf_transformations.euler_from_quaternion(quat)
-        # VERY HACKY HERE
-        current_heading = y
+        r, p, current_heading = tf_transformations.euler_from_quaternion(quat)
+
         desired_heading = math.atan2(
             waypoint_pose.position.y - transform.translation.y,
             waypoint_pose.position.x - transform.translation.x,
         )
-        error = -1 * (desired_heading - current_heading)
+
+        # covert it to degree
+        current_heading = int(np.rad2deg(current_heading))
+        desired_heading = int(np.rad2deg(desired_heading))
+
+        # bound values within -360 ~ 360 deg
+        current_heading = current_heading % 360
+        desired_heading = desired_heading % 360
+
+        # bound values within 0 ~ 360
+        current_heading = (
+            360 - abs(current_heading) if current_heading < 0 else current_heading
+        )
+
+        desired_heading = (
+            360 - abs(desired_heading) if desired_heading < 0 else desired_heading
+        )
+
+        if 270 <= current_heading <= 360 and 0 <= desired_heading <= 90:
+            error = -1 * (360 - current_heading + desired_heading)
+        elif 270 <= desired_heading <= 360 and 0 <= current_heading <= 90:
+            error = 360 - desired_heading + current_heading
+        else:
+            error = current_heading - desired_heading
         self.lat_error_queue.append(error)
         if len(self.lat_error_queue) >= 2:
             _de = self.lat_error_queue[-1] - self.lat_error_queue[-2]
@@ -166,7 +203,11 @@ class PIDControllerNode(Node):
         else:
             _de = 0.0
             _ie = 0.0
-        k_p, k_d, k_i = self.find_k_values(config=self.lat_config, odom=odom_msg)
+        k_p, k_d, k_i = (
+            1 / 360,
+            0,
+            0,
+        )  # self.find_k_values(config=self.lat_config, odom=odom_msg)
         control = float(np.clip((k_p * error) + (k_d * _de) + (k_i * _ie), -1, 1))
         return control
 

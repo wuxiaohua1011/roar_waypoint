@@ -205,13 +205,13 @@ def smooth_track(path: Path, threshold=1):
 
 if __name__ == "__main__":
     file_name = Path(
-        "/home/roar/Desktop/projects/roar-indy-ws/data/waypoints/16_04_2022_10_48_43.txt"
+        "/home/roar/Desktop/projects/roar-indy-ws/data/waypoints/30_06_2022_13_10_59.txt"
     )
-    # track_data: List[List[float]] = read_txt(file_name)
+    track_data: List[List[float]] = read_txt(file_name)
     # track_data = swapCols(track_data)
     # save(track_data)
 
-    # visualize_track_data(track_data=track_data, file_name=file_name)
+    visualize_track_data(track_data=track_data, file_name=file_name)
     # visualize_tracks(data_dir=Path("/home/roar/roar/roar_ros/data/waypoints"), regex="*")
     # visualize_tracks_together(data_dir=Path("/home/roar/roar/roar_ros/data/waypoints"), regex="*.txt")
-    smooth_track(file_name)
+    # smooth_track(file_name)

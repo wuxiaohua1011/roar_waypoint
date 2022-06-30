@@ -20,18 +20,6 @@ def generate_launch_description():
                 name="path_topic", default_value="/path"
             ),
             launch.actions.DeclareLaunchArgument(
-                name="max_reverse_throttle", default_value="-0.2"
-            ),
-            launch.actions.DeclareLaunchArgument(
-                name="max_forward_throttle", default_value="0.2"
-            ),
-            launch.actions.DeclareLaunchArgument(
-                name="max_steering", default_value="1.0"
-            ),
-            launch.actions.DeclareLaunchArgument(
-                name="steering_offset", default_value="0.0"
-            ),
-            launch.actions.DeclareLaunchArgument(
                 name="target_frame", default_value="ego_vehicle"
             ),
             launch.actions.DeclareLaunchArgument(
@@ -41,14 +29,14 @@ def generate_launch_description():
             launch.actions.DeclareLaunchArgument(
                 name="dir", default_value="./data/waypoints/"
             ),
-            launch.actions.IncludeLaunchDescription(
-                launch.launch_description_sources.PythonLaunchDescriptionSource(
-                    os.path.join(
-                        get_package_share_directory("roar_carla_ros2"),
-                        "roar_carla_no_rviz.launch.py",
-                    )
-                )
-            ),
+            # launch.actions.IncludeLaunchDescription(
+            #     launch.launch_description_sources.PythonLaunchDescriptionSource(
+            #         os.path.join(
+            #             get_package_share_directory("roar_carla_ros2"),
+            #             "roar_carla_no_rviz.launch.py",
+            #         )
+            #     )
+            # ),
             Node(
                 package="roar_waypoint",
                 executable="waypoint_generator",
@@ -68,11 +56,11 @@ def generate_launch_description():
                     }
                 ],
             ),
-            Node(
-                package="rviz2",
-                executable="rviz2",
-                name="rviz2",
-                arguments=["-d", str(rviz_path)],
-            ),
+            # Node(
+            #     package="rviz2",
+            #     executable="rviz2",
+            #     name="rviz2",
+            #     arguments=["-d", str(rviz_path)],
+            # ),
         ]
     )

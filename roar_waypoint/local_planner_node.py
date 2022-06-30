@@ -22,7 +22,7 @@ from tf2_ros.transform_listener import TransformListener
 from geometry_msgs.msg import TransformStamped
 from geometry_msgs.msg import Quaternion
 from nav_msgs.msg import Path as NavPath
-from geometry_msgs.msg import PoseStamped, Pose
+from geometry_msgs.msg import PoseStamped, Pose, Point
 from typing import List
 from geometry_msgs.msg import Point
 from pathlib import Path
@@ -37,7 +37,6 @@ class LocalPlannerNode(Node):
     def __init__(self):
         super().__init__("local_planner_node")
         # parameter verification
-        self.declare_parameter("rate", 0.2)
         self.declare_parameter("waypoint_file_path", "")
         self.declare_parameter("target_frame", "base_link")
         self.declare_parameter("path_topic", "/path")
@@ -50,28 +49,35 @@ class LocalPlannerNode(Node):
         self.odom_topic = (
             self.get_parameter("odom_topic").get_parameter_value().string_value
         )
+        self.get_logger().info(f"Listenng to odom topic {self.odom_topic}")
         self.closeness_threshold = (
             self.get_parameter("closeness_threshold").get_parameter_value().double_value
         )
+        self.get_logger().info(f"Closeness_threshold = {self.closeness_threshold}")
         self.marker_size = (
             self.get_parameter("marker_size").get_parameter_value().double_value
         )
+        self.get_logger().info(f"Marker size = {self.marker_size}")
         self.target_frame = (
             self.get_parameter("target_frame").get_parameter_value().string_value
         )
+        self.get_logger().info(f"target frame = {self.target_frame}")
         self.source_frame = (
             self.get_parameter("source_frame").get_parameter_value().string_value
         )
+        self.get_logger().info(f"source frame = {self.source_frame}")
         self.waypoint_file_path: Path = Path(
             self.get_parameter("waypoint_file_path").get_parameter_value().string_value
         )
-        self.rate: float = self.get_parameter("rate").get_parameter_value().double_value
         self.path_topic = (
             self.get_parameter("path_topic").get_parameter_value().string_value
         )
+
+        self.get_logger().info(f"Path topic = {self.path_topic}")
         self.next_waypoint_topic = (
             self.get_parameter("next_waypoint_topic").get_parameter_value().string_value
         )
+        self.get_logger().info(f"next waypoint topic = {self.next_waypoint_topic}")
         assert (
             self.waypoint_file_path.exists()
         ), f"{self.waypoint_file_path} does not exist"
@@ -139,7 +145,6 @@ class LocalPlannerNode(Node):
             transform=trans,
             radius=self.closeness_threshold,
         )
-
         m = Marker(
             pose=self.path.poses[self.closest_waypoint_index].pose,
             color=ColorRGBA(r=1.0, g=0.0, b=0.0, a=1.0),
@@ -152,6 +157,12 @@ class LocalPlannerNode(Node):
         self.waypoint_marker_publisher.publish(m)
 
     @staticmethod
+    def distance(p1: Pose, p2: Pose):
+        return np.sqrt(
+            (p1.position.x - p2.position.x) ** 2 + (p1.position.y - p2.position.y) ** 2
+        )
+
+    @staticmethod
     def find_index_of_first_point_outside_of_radius(
         path: NavPath,
         curr_index: int,
@@ -161,24 +172,18 @@ class LocalPlannerNode(Node):
         assert curr_index < len(
             path.poses
         ), f"Something is wrong. curr_index = {curr_index}, len(path) = {len(path.poses)}"
-        vehicle_loc = np.array(
-            [
-                transform.transform.translation.x,
-                transform.transform.translation.y,
-            ]
+        vehicle_loc = Pose(
+            position=Point(
+                x=transform.transform.translation.x,
+                y=transform.transform.translation.y,
+                z=transform.transform.translation.z,
+            )
         )
         while True:
-            waypoint_loc = np.array(
-                [
-                    path.poses[curr_index].pose.position.x,
-                    path.poses[curr_index].pose.position.y,
-                ]
+
+            curr_dist = LocalPlannerNode.distance(
+                p1=vehicle_loc, p2=path.poses[curr_index].pose
             )
-            curr_dist = np.sqrt(
-                (vehicle_loc[0] - waypoint_loc[0]) ** 2
-                + (vehicle_loc[1] - waypoint_loc[1]) ** 2
-            )
-            # curr_dist = np.linalg.norm(vehicle_loc - waypoint_loc)
             if curr_dist > radius:
                 break
             else:
@@ -219,6 +224,9 @@ class LocalPlannerNode(Node):
                 x=data[0],
                 y=data[1],
                 z=data[2],
+            )
+            current_pose.pose.orientation = Quaternion(
+                x=data[3], y=data[4], z=data[5], w=data[6]
             )
             path.poses.append(current_pose)
         return path

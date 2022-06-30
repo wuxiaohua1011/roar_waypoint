@@ -89,7 +89,7 @@ class PIDControllerNode(Node):
                 self.waypoint_msg,
             ],
             queue_size=10,
-            slop=0.5,
+            slop=0.2,
         )
         self.ats.registerCallback(self.on_msgs_received)
 
@@ -119,6 +119,7 @@ class PIDControllerNode(Node):
         self.down_ramp_grade = self.long_config.get("down_ramp_grade", -10)
 
     def on_msgs_received(self, odom_msg: Odometry, waypoint_msg: Marker):
+
         target_frame = self.target_frame
         source_frame = self.source_frame
 
@@ -197,9 +198,9 @@ class PIDControllerNode(Node):
             _ie = 0.0
         k_p, k_d, k_i = self.find_k_values(config=self.lat_config, odom=odom_msg)
         lat_control = float(np.clip((k_p * error) + (k_d * _de) + (k_i * _ie), -1, 1))
-        print(
-            f"v_vec_normed: {v_vec_normed} | w_vec_normed: {w_vec_normed} | error = {error} | lat_control = {lat_control}"
-        )
+        # print(
+        #     f"v_vec_normed: {v_vec_normed} | w_vec_normed: {w_vec_normed} | error = {error} | lat_control = {lat_control}"
+        # )
 
         return lat_control
 
