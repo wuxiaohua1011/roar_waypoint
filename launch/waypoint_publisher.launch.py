@@ -32,7 +32,6 @@ def generate_launch_description():
                 name="closeness_threshold", default_value="20.0"
             ),
             launch.actions.DeclareLaunchArgument(name="waypoint_file_path"),
-            launch.actions.DeclareLaunchArgument(name="waypoint_file_path"),
             Node(
                 package="roar_waypoint",
                 executable="waypoint_publisher_node",
