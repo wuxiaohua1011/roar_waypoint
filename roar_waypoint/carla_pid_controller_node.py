@@ -32,7 +32,7 @@ import tf_transformations
 from collections import deque
 import json
 import math
-from .local_planner_node import LocalPlannerNode
+from .waypoint_publisher_node import LocalPlannerNode
 
 
 class PIDControllerNode(Node):

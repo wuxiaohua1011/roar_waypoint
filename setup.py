@@ -11,7 +11,14 @@ setup(
     data_files=[
         ("share/ament_index/resource_index/packages", ["resource/" + package_name]),
         ("share/" + package_name, ["package.xml"]),
-        (os.path.join("share", package_name), glob("launch/*.launch.py")),
+        (
+            os.path.join(
+                "share",
+                package_name,
+                "launch",
+            ),
+            glob("launch/*.launch.py"),
+        ),
         (
             os.path.join(os.path.join("share", package_name), "configs"),
             glob("configs/*"),
@@ -27,7 +34,7 @@ setup(
     entry_points={
         "console_scripts": [
             "waypoint_generator = roar_waypoint.waypoint_generator:main",
-            "local_planner_node = roar_waypoint.local_planner_node:main",
+            "waypoint_publisher_node = roar_waypoint.waypoint_publisher_node:main",
             "pid_controller_node = roar_waypoint.pid_controller_node:main",
             "carla_pid_controller_node = roar_waypoint.carla_pid_controller_node:main",
         ],

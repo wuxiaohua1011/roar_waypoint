@@ -1,21 +1,8 @@
 #!/usr/bin/env python3
-
-from dis import dis
-from importlib.resources import path
-from cv2 import transform
-from matplotlib.transforms import Transform
-from pydantic import FilePath
-from sympy import im, true
 import rclpy
 from rclpy.node import Node
 from builtin_interfaces.msg import Duration
-from carla_msgs.msg import CarlaEgoVehicleControl
-from sensor_msgs.msg import PointCloud2
-import socket
 import numpy as np
-from typing import Optional, Tuple
-from carla_msgs.msg import CarlaEgoVehicleControl
-from sensor_msgs.msg import Image
 from tf2_ros import TransformException
 from tf2_ros.buffer import Buffer
 from tf2_ros.transform_listener import TransformListener
@@ -26,30 +13,22 @@ from geometry_msgs.msg import PoseStamped, Pose, Point
 from typing import List
 from geometry_msgs.msg import Point
 from pathlib import Path
-from datetime import datetime
 from visualization_msgs.msg import Marker
 from std_msgs.msg import ColorRGBA
 from geometry_msgs.msg import Vector3
 from nav_msgs.msg import Odometry
 
 
-class LocalPlannerNode(Node):
+class WaypointPublisherNode(Node):
     def __init__(self):
-        super().__init__("local_planner_node")
+        super().__init__("waypoint_publisher_node")
         # parameter verification
         self.declare_parameter("waypoint_file_path", "")
         self.declare_parameter("target_frame", "base_link")
-        self.declare_parameter("path_topic", "/path")
-        self.declare_parameter("next_waypoint_topic", "/next_waypoint")
         self.declare_parameter("source_frame", "odom")
         self.declare_parameter("marker_size", 1.0)
         self.declare_parameter("closeness_threshold", 1.0)
-        self.declare_parameter("odom_topic", "/carla/ego_vehicle/odometry")
 
-        self.odom_topic = (
-            self.get_parameter("odom_topic").get_parameter_value().string_value
-        )
-        self.get_logger().info(f"Listenng to odom topic {self.odom_topic}")
         self.closeness_threshold = (
             self.get_parameter("closeness_threshold").get_parameter_value().double_value
         )
@@ -69,15 +48,6 @@ class LocalPlannerNode(Node):
         self.waypoint_file_path: Path = Path(
             self.get_parameter("waypoint_file_path").get_parameter_value().string_value
         )
-        self.path_topic = (
-            self.get_parameter("path_topic").get_parameter_value().string_value
-        )
-
-        self.get_logger().info(f"Path topic = {self.path_topic}")
-        self.next_waypoint_topic = (
-            self.get_parameter("next_waypoint_topic").get_parameter_value().string_value
-        )
-        self.get_logger().info(f"next waypoint topic = {self.next_waypoint_topic}")
         assert (
             self.waypoint_file_path.exists()
         ), f"{self.waypoint_file_path} does not exist"
@@ -89,18 +59,18 @@ class LocalPlannerNode(Node):
         self.has_path_published: bool = False
         self.path_publisher = self.create_publisher(
             msg_type=NavPath,
-            topic=self.path_topic,
+            topic="/global_path",
             qos_profile=1,
         )
         self.waypoint_marker_publisher = self.create_publisher(
-            msg_type=Marker, topic=self.next_waypoint_topic, qos_profile=1
+            msg_type=Marker, topic="/next_waypoint", qos_profile=1
         )
 
         self.get_logger().info(f"[{len(self.path.poses)}] points were read")
         # timer
         self.subscription = self.create_subscription(
             Odometry,
-            self.odom_topic,
+            "/carla/ego_vehicle/odometry",
             self.timer_callback,
             10,
         )
@@ -136,7 +106,7 @@ class LocalPlannerNode(Node):
         # find the best starting point if first started
         if not self.is_init_position_in_path_determined:
             self.closest_waypoint_index = self.find_closest(self.path, trans)
-            self.is_init_position_in_path_determined = true
+            self.is_init_position_in_path_determined = True
 
         # find the first point outside of search radius
         self.closest_waypoint_index = self.find_index_of_first_point_outside_of_radius(
@@ -181,7 +151,7 @@ class LocalPlannerNode(Node):
         )
         while True:
 
-            curr_dist = LocalPlannerNode.distance(
+            curr_dist = WaypointPublisherNode.distance(
                 p1=vehicle_loc, p2=path.poses[curr_index].pose
             )
             if curr_dist > radius:
@@ -238,7 +208,7 @@ class LocalPlannerNode(Node):
 def main(args=None):
     rclpy.init(args=args)
 
-    node = LocalPlannerNode()
+    node = WaypointPublisherNode()
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
